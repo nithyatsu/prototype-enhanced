@@ -1,7 +1,3 @@
-// ============================================================================
-// Simple Frontend → Backend → Database Application
-// ============================================================================
-
 import radius as radius
 
 @description('The Radius environment ID')

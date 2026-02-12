@@ -5,47 +5,13 @@
 
 ## Trigger
 
-<!-- When should the workflow run? Examples: -->
-<!-- - On push to `main` -->
-<!-- - On pull request to `main` -->
-<!-- - On manual dispatch -->
-<!-- - On a schedule (cron) -->
+The workflow should run every 2 hours. I should also be able to run it manually. 
+
 
 - 
 
 ## Steps
 
-<!-- What should happen, in order? Examples: -->
-<!-- 1. Checkout code -->
-<!-- 2. Lint Bicep template -->
-<!-- 3. Deploy with `rad deploy app.bicep` -->
-<!-- 4. Run smoke tests -->
+When the workflow runs, it should generate a graph by parsing the app.bicep from the main branch using bicep compiler. 
+It should make an image out of this and post it to the README.md Architecture section. Use github UI kind of look and feel for the graph.
 
-1. 
-
-## Environment
-
-<!-- Runner OS and any tool versions needed -->
-
-- Runner: ubuntu-latest
-- Tools: 
-
-## Secrets & Variables
-
-<!-- Any credentials or config values the workflow needs -->
-<!-- Example: AZURE_CREDENTIALS, RADIUS_ENV_ID -->
-
-- 
-
-## Target
-
-<!-- Where does this deploy? -->
-<!-- Example: Local Kubernetes, Azure AKS cluster, etc. -->
-
-- 
-
-## Notes
-
-<!-- Any extra requirements, constraints, or context -->
-
-- 
