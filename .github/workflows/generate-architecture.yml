@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------
 # Architecture Diagram Generator
 # ---------------------------------------------------------------
-# Parses app.bicep, generates an architecture diagram (PNG),
-# and updates README.md with the image.
+# Parses app.bicep, generates an interactive architecture diagram (SVG)
+# with clickable nodes linking to source lines, and updates README.md.
 #
 # Trigger: Every 2 hours + manual dispatch
 # Based on: workflow-spec.md
@@ -38,13 +38,17 @@ jobs:
           pip install graphviz
 
       - name: Generate architecture diagram
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REPO_BRANCH: ${{ github.ref_name }}
         run: python scripts/generate_architecture.py
 
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/architecture.png README.md
+          git add docs/architecture.svg README.md
           # Only commit if there are changes
           git diff --staged --quiet || git commit -m "docs: update architecture diagram [automated]"
           git push

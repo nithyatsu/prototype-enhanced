@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Parse app.bicep and generate an architecture diagram with a GitHub UI look-and-feel.
-Outputs a PNG image to docs/architecture.png.
+Parse app.bicep and generate an interactive architecture diagram (SVG) with
+GitHub UI look-and-feel. Nodes are clickable and link to the exact line in
+app.bicep on GitHub. Tooltips show the line number.
+
+Outputs an SVG to docs/architecture.svg.
 """
 
 import re
@@ -18,7 +21,7 @@ except ImportError:
 
 
 def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
-    """Parse a Bicep file and extract resources and connections."""
+    """Parse a Bicep file and extract resources, connections, and line numbers."""
     with open(bicep_path, "r") as f:
         content = f.read()
 
@@ -35,6 +38,9 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
         symbolic_name = match.group(1)
         resource_type = match.group(2)
         body = match.group(3)
+
+        # Calculate the 1-based line number where this resource is defined
+        line_number = content[: match.start()].count("\n") + 1
 
         # Extract the 'name' property
         name_match = re.search(r"name:\s*'([^']+)'", body)
@@ -69,6 +75,7 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
             "image": image,
             "port": port,
             "category": category,
+            "line_number": line_number,
         })
 
         # Extract connections from the body
@@ -86,7 +93,6 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
         # Extract connections via source references like database.id
         source_refs = re.findall(r"source:\s*(\w+)\.(id|connectionString)", body)
         for ref_name, _ in source_refs:
-            # Avoid duplicates
             conn = {"from": symbolic_name, "to": ref_name}
             if conn not in connections:
                 connections.append(conn)
@@ -94,23 +100,25 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
     return resources, connections
 
 
-def get_icon(category: str) -> str:
-    """Return an emoji-style label prefix based on category."""
-    icons = {
-        "container": "📦",
-        "datastore": "🗄️",
-        "application": "🔷",
-        "other": "⚙️",
-    }
-    return icons.get(category, "⚙️")
+def get_github_file_url(repo_owner: str, repo_name: str, branch: str, file_path: str, line: int) -> str:
+    """Build a GitHub URL that highlights a specific line."""
+    return f"https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{file_path}#L{line}"
 
 
-def generate_graph(resources: list[dict], connections: list[dict], output_path: str):
-    """Generate an architecture diagram with GitHub-inspired styling."""
+def generate_graph(
+    resources: list[dict],
+    connections: list[dict],
+    output_path: str,
+    repo_owner: str,
+    repo_name: str,
+    branch: str,
+    bicep_file: str,
+):
+    """Generate an interactive SVG architecture diagram with GitHub-inspired styling."""
 
     dot = graphviz.Digraph(
         "architecture",
-        format="png",
+        format="svg",
         engine="dot",
     )
 
@@ -123,7 +131,7 @@ def generate_graph(resources: list[dict], connections: list[dict], output_path: 
         pad="0.5",
         nodesep="1",
         ranksep="1.5",
-        label="Architecture · app.bicep",
+        label=f"Architecture · {bicep_file}",
         labelloc="t",
         fontsize="18",
         style="rounded",
@@ -141,6 +149,7 @@ def generate_graph(resources: list[dict], connections: list[dict], output_path: 
         fontsize="12",
         margin="0.3,0.2",
         penwidth="1.5",
+        target="_blank",
     )
 
     # Default edge styling
@@ -170,11 +179,10 @@ def generate_graph(resources: list[dict], connections: list[dict], output_path: 
         if res["category"] == "application":
             continue
 
-        icon = get_icon(res["category"])
         colors = category_colors.get(res["category"], category_colors["other"])
 
         # Build label
-        lines = [f"{icon}  {res['display_name']}"]
+        lines = [f"{res['display_name']}"]
         if res["image"]:
             lines.append(f"{res['image']}")
         if res["port"]:
@@ -182,12 +190,19 @@ def generate_graph(resources: list[dict], connections: list[dict], output_path: 
 
         label = "\\n".join(lines)
 
+        # GitHub URL for this resource's line — clickable link
+        url = get_github_file_url(repo_owner, repo_name, branch, bicep_file, res["line_number"])
+        tooltip = f"{res['display_name']} — {bicep_file} line {res['line_number']}"
+
         dot.node(
             res["symbolic_name"],
             label=label,
             fillcolor=colors["fillcolor"],
             color=colors["color"],
             penwidth="2",
+            URL=url,
+            tooltip=tooltip,
+            target="_blank",
         )
 
     # Add edges
@@ -205,14 +220,14 @@ def generate_graph(resources: list[dict], connections: list[dict], output_path: 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    # Render (graphviz appends .png automatically)
-    output_base = output_path.removesuffix(".png")
+    # Render (graphviz appends .svg automatically)
+    output_base = output_path.removesuffix(".svg")
     dot.render(output_base, cleanup=True)
     print(f"Architecture diagram saved to {output_path}")
 
 
 def update_readme(readme_path: str, image_rel_path: str):
-    """Update the Architecture section in README.md with the generated image."""
+    """Update the Architecture section in README.md with the generated SVG."""
     with open(readme_path, "r") as f:
         content = f.read()
 
@@ -223,9 +238,15 @@ def update_readme(readme_path: str, image_rel_path: str):
         re.DOTALL,
     )
 
+    note = (
+        "> *Auto-generated every 2 hours from `app.bicep`. "
+        "Click a node to jump to its definition.*"
+    )
+
     replacement_content = (
         f"\\1\n"
-        f"![Architecture Diagram]({image_rel_path})\n"
+        f"![Architecture Diagram]({image_rel_path})\n\n"
+        f"{note}\n"
         f"\n"
         f"\\2"
     )
@@ -234,19 +255,29 @@ def update_readme(readme_path: str, image_rel_path: str):
         new_content = pattern.sub(replacement_content, content)
     else:
         # Append if section doesn't exist
-        new_content = content + f"\n## Architecture\n\n![Architecture Diagram]({image_rel_path})\n"
+        new_content = content + (
+            f"\n## Architecture\n\n"
+            f"![Architecture Diagram]({image_rel_path})\n\n"
+            f"{note}\n"
+        )
 
     with open(readme_path, "w") as f:
         f.write(new_content)
 
-    print(f"README.md updated with architecture image reference")
+    print(f"README.md updated with architecture SVG reference")
 
 
 def main():
     repo_root = os.environ.get("GITHUB_WORKSPACE", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    bicep_path = os.path.join(repo_root, "app.bicep")
-    output_path = os.path.join(repo_root, "docs", "architecture.png")
+    bicep_file = "app.bicep"
+    bicep_path = os.path.join(repo_root, bicep_file)
+    output_path = os.path.join(repo_root, "docs", "architecture.svg")
     readme_path = os.path.join(repo_root, "README.md")
+
+    # Repository info — used to build GitHub URLs for clickable nodes
+    repo_owner = os.environ.get("REPO_OWNER", "nithyatsu")
+    repo_name = os.environ.get("REPO_NAME", "prototype")
+    branch = os.environ.get("REPO_BRANCH", "main")
 
     if not os.path.exists(bicep_path):
         print(f"Error: {bicep_path} not found")
@@ -257,15 +288,15 @@ def main():
 
     print(f"Found {len(resources)} resources and {len(connections)} connections")
     for r in resources:
-        print(f"  - {r['display_name']} ({r['category']})")
+        print(f"  - {r['display_name']} ({r['category']}) @ line {r['line_number']}")
     for c in connections:
         print(f"  - {c['from']} → {c['to']}")
 
-    print(f"\nGenerating diagram...")
-    generate_graph(resources, connections, output_path)
+    print(f"\nGenerating interactive SVG diagram...")
+    generate_graph(resources, connections, output_path, repo_owner, repo_name, branch, bicep_file)
 
     print(f"Updating README...")
-    update_readme(readme_path, "docs/architecture.png")
+    update_readme(readme_path, "docs/architecture.svg")
 
     print("Done!")
 

@@ -4,9 +4,9 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 
 ## Architecture
 
-![Architecture Diagram](docs/architecture.png)
+![Architecture Diagram](docs/architecture.svg)
 
-> *This diagram is auto-generated every 2 hours from `app.bicep` by the [Generate Architecture Diagram](.github/workflows/generate-architecture.yml) workflow.*
+> *Auto-generated every 2 hours from `app.bicep`. Click a node to jump to its definition in the source.*
 
 | Component | Image | Port | Description |
 |-----------|-------|------|-------------|
