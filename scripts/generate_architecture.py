@@ -90,49 +90,75 @@ def get_github_file_url(repo_owner, repo_name, branch, file_path, line):
 
 
 def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bicep_file):
-    """Generate a Mermaid diagram string with clickable nodes."""
+    """Generate a Mermaid diagram string with clickable nodes and GitHub-like styling."""
 
     lines = ["graph LR"]
 
-    # Style classes for categories
-    lines.append("    classDef container fill:#161b22,stroke:#58a6ff,stroke-width:2px,color:#e6edf3")
-    lines.append("    classDef datastore fill:#161b22,stroke:#f78166,stroke-width:2px,color:#e6edf3")
-    lines.append("    classDef other fill:#161b22,stroke:#8b949e,stroke-width:2px,color:#e6edf3")
+    # --- GitHub-inspired theme & styling ---
+    # Use %%{ init }%% for Mermaid config would go before graph, so we use classDef instead.
+    # Node styles — rounded via stadium-shaped syntax, GitHub dark palette
+    lines.insert(0, "%%{ init: { 'theme': 'dark', 'themeVariables': { "
+                     "'primaryColor': '#161b22', "
+                     "'primaryTextColor': '#e6edf3', "
+                     "'primaryBorderColor': '#30363d', "
+                     "'lineColor': '#58a6ff', "
+                     "'secondaryColor': '#21262d', "
+                     "'tertiaryColor': '#0d1117', "
+                     "'fontSize': '14px', "
+                     "'fontFamily': '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif'"
+                     " } } }%%")
+
+    # Class definitions for different resource types
+    lines.append("    classDef container fill:#161b22,stroke:#58a6ff,stroke-width:2px,color:#e6edf3,rx:12,ry:12")
+    lines.append("    classDef datastore fill:#161b22,stroke:#f78166,stroke-width:2px,color:#e6edf3,rx:12,ry:12")
+    lines.append("    classDef other fill:#161b22,stroke:#8b949e,stroke-width:2px,color:#e6edf3,rx:12,ry:12")
 
     resource_map = {r["symbolic_name"]: r for r in resources}
 
     # Add nodes (skip the top-level application resource)
+    # Use stadium shape ([" "]) for smooth rounded pill-shape nodes
     for res in resources:
         if res["category"] == "application":
             continue
 
-        # Build node label with resource details and source location
-        label_parts = [res["display_name"]]
+        # Build label — clean, no line numbers (those go in tooltip)
+        label_parts = ["<b>" + res["display_name"] + "</b>"]
         if res["image"]:
-            label_parts.append(res["image"])
+            label_parts.append("<i>" + res["image"] + "</i>")
         if res["port"]:
-            label_parts.append("port " + res["port"])
-        label_parts.append(bicep_file + " L" + str(res["line_number"]))
+            label_parts.append(":" + res["port"])
 
         label = "<br/>".join(label_parts)
-        lines.append('    {}["{}"]:::{}'.format(res["symbolic_name"], label, res["category"]))
+        # Stadium-shaped node for rounded pill look
+        lines.append('    {}(["{}"]):::{}'.format(res["symbolic_name"], label, res["category"]))
 
-    # Add edges
+    # Add edges — use thick arrow style
     for conn in connections:
         if conn["from"] in resource_map and conn["to"] in resource_map:
             from_res = resource_map[conn["from"]]
             to_res = resource_map[conn["to"]]
             if from_res["category"] == "application" or to_res["category"] == "application":
                 continue
-            lines.append("    {} --> {}".format(conn["from"], conn["to"]))
+            lines.append("    {} ==> {}".format(conn["from"], conn["to"]))
 
-    # Add click directives - each node links to its line in app.bicep
+    # Add click directives — tooltip shows line number, click opens GitHub
     for res in resources:
         if res["category"] == "application":
             continue
         url = get_github_file_url(repo_owner, repo_name, branch, bicep_file, res["line_number"])
-        tooltip = "{} defined at {} line {}".format(res["display_name"], bicep_file, res["line_number"])
+        tooltip = "{} — {} line {}".format(res["display_name"], bicep_file, res["line_number"])
         lines.append('    click {} "{}" "{}"'.format(res["symbolic_name"], url, tooltip))
+
+    # Link style — thicker, GitHub blue
+    edge_count = 0
+    for conn in connections:
+        if conn["from"] in resource_map and conn["to"] in resource_map:
+            from_res = resource_map[conn["from"]]
+            to_res = resource_map[conn["to"]]
+            if from_res["category"] == "application" or to_res["category"] == "application":
+                continue
+            lines.append("    linkStyle {} stroke:#58a6ff,stroke-width:2px".format(edge_count))
+            edge_count += 1
 
     return "\n".join(lines)
 
