@@ -6,13 +6,15 @@
 # app.bicep, generates a Mermaid diagram with GitHub styling,
 # and updates README.md with the interactive graph.
 #
-# Trigger: Every 2 hours + manual dispatch
+# Trigger: Push to main, every 2 hours, or manual dispatch
 # Based on: workflow-spec.md
 # ---------------------------------------------------------------
 
 name: Generate Architecture Diagram
 
 on:
+  push:
+    branches: [main]
   schedule:
     # Every 2 hours
     - cron: "0 */2 * * *"
