@@ -24,7 +24,8 @@ permissions:
   contents: write
 
 env:
-  RADIUS_CHART_LOCATION: deploy/Chart/
+  RADIUS_CONTAINER_REGISTRY: ghcr.io/nithyatsu
+  RADIUS_IMAGE_TAG: latest
 
 jobs:
   generate-diagram:
@@ -50,7 +51,38 @@ jobs:
         run: kubectl cluster-info && kubectl get nodes
 
       # -------------------------------------------------------
-      # Step 2: Install Radius CLI & install into cluster
+      # Step 2: Pull custom images and load into Kind
+      # -------------------------------------------------------
+      - name: Pull custom Radius images
+        run: |
+          images=(
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/applications-rp:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/dynamic-rp:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/controller:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/ucpd:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/bicep:${{ env.RADIUS_IMAGE_TAG }}"
+          )
+          for img in "${images[@]}"; do
+            echo "Pulling $img ..."
+            docker pull "$img" && echo "✅ $img pulled" || { echo "❌ Failed to pull $img"; exit 1; }
+          done
+
+      - name: Load images into Kind cluster
+        run: |
+          images=(
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/applications-rp:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/dynamic-rp:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/controller:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/ucpd:${{ env.RADIUS_IMAGE_TAG }}"
+            "${{ env.RADIUS_CONTAINER_REGISTRY }}/bicep:${{ env.RADIUS_IMAGE_TAG }}"
+          )
+          for img in "${images[@]}"; do
+            echo "Loading $img into Kind ..."
+            kind load docker-image "$img" --name kind-radius
+          done
+
+      # -------------------------------------------------------
+      # Step 3: Install Radius CLI & install into cluster
       # -------------------------------------------------------
       - name: Install Radius CLI
         run: |
@@ -60,12 +92,12 @@ jobs:
       - name: Install Radius with custom images
         run: |
           rad install kubernetes \
-            --chart ${{ env.RADIUS_CHART_LOCATION }} \
-            --set rp.image=ghcr.io/nithyatsu/applications-rp,rp.tag=latest \
-            --set dynamicrp.image=ghcr.io/nithyatsu/dynamic-rp,dynamicrp.tag=latest \
-            --set controller.image=ghcr.io/nithyatsu/controller,controller.tag=latest \
-            --set ucp.image=ghcr.io/nithyatsu/ucpd,ucp.tag=latest \
-            --set bicep.image=ghcr.io/nithyatsu/bicep,bicep.tag=latest \
+            --set rp.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/applications-rp,rp.tag=${{ env.RADIUS_IMAGE_TAG }} \
+            --set dynamicrp.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/dynamic-rp,dynamicrp.tag=${{ env.RADIUS_IMAGE_TAG }} \
+            --set controller.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/controller,controller.tag=${{ env.RADIUS_IMAGE_TAG }} \
+            --set ucp.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/ucpd,ucp.tag=${{ env.RADIUS_IMAGE_TAG }} \
+            --set bicep.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/bicep,bicep.tag=${{ env.RADIUS_IMAGE_TAG }} \
+            --set global.imagePullPolicy=Never
 
 
       - name: Configure Radius workspace and environment
