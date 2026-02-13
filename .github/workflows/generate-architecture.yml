@@ -70,12 +70,6 @@ jobs:
           rad env create kind-radius --namespace default
           rad env switch kind-radius
 
-      - name: Wait for Radius pods to be ready
-        run: |
-          echo "Waiting for Radius pods..."
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/part-of=radius -n radius-system --timeout=300s
-          kubectl get pods -n radius-system
-
       # -------------------------------------------------------
       # Step 3: Generate the application graph
       # -------------------------------------------------------
