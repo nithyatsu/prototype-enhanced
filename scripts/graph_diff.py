@@ -85,8 +85,8 @@ def resolve_name(res_id: str, resources: dict) -> str:
     return res_id.rstrip("/").rsplit("/", 1)[-1]
 
 
-def resource_label(res: dict) -> str:
-    """Human-readable one-liner for a resource."""
+def resource_label(res: dict, repo_owner: str = "", repo_name: str = "", pr_number: str = "") -> str:
+    """Human-readable one-liner for a resource with linked source location."""
     name = res.get("name", "?")
     rtype = res.get("type", "").rsplit("/", 1)[-1]
     loc = res.get("sourceLocation", {})
@@ -94,7 +94,16 @@ def resource_label(res: dict) -> str:
     line = loc.get("line", "")
     parts = [f"**{name}**", f"`{rtype}`"]
     if file:
-        parts.append(f"{file}:{line}" if line else file)
+        display = f"{file}:{line}" if line else file
+        if repo_owner and repo_name and pr_number:
+            # GitHub diff anchor: filename with / and . replaced by -
+            anchor = file.replace("/", "-").replace(".", "-")
+            url = f"https://github.com/{repo_owner}/{repo_name}/pull/{pr_number}/files#diff-{anchor}"
+            if line:
+                url += f"R{line}"
+            parts.append(f"[{display}]({url})")
+        else:
+            parts.append(display)
     return " — ".join(parts)
 
 
@@ -341,11 +350,11 @@ def render_diff_section(app_path: str, base_graph: dict, head_graph: dict, diff:
         lines.append("| Status | Resource |")
         lines.append("|--------|----------|")
         for rid in sorted(diff["added"]):
-            lines.append(f"| 🟢 Added | {resource_label(head_graph['resources'][rid])} |")
+            lines.append(f"| 🟢 Added | {resource_label(head_graph['resources'][rid], repo_owner, repo_name, pr_number)} |")
         for rid in sorted(diff["removed"]):
-            lines.append(f"| 🔴 Removed | {resource_label(base_graph['resources'][rid])} |")
+            lines.append(f"| 🔴 Removed | {resource_label(base_graph['resources'][rid], repo_owner, repo_name, pr_number)} |")
         for rid in sorted(diff["modified"]):
-            lines.append(f"| 🟡 Modified | {resource_label(head_graph['resources'][rid])} |")
+            lines.append(f"| 🟡 Modified | {resource_label(head_graph['resources'][rid], repo_owner, repo_name, pr_number)} |")
         lines.append("")
 
     # ── Connections table ──
@@ -377,15 +386,15 @@ def render_diff_section(app_path: str, base_graph: dict, head_graph: dict, diff:
 
 def render_no_changes() -> str:
     return (
-        "## 📊 App Graph Diff\n\n"
-        "> No app graph changes detected.\n\n"
+        "## � Architecture Changes\n\n"
+        "> No architecture changes detected in this PR.\n\n"
         "---\n"
         "*Powered by [Radius](https://radapp.io/)*\n"
     )
 
 
 def render_full_comment(sections: list) -> str:
-    header = "## 📊 App Graph Diff\n\n"
+    header = "## � Architecture Changes\n\n"
     footer = "\n---\n*Powered by [Radius](https://radapp.io/)*\n"
     return header + "\n".join(sections) + footer
 
