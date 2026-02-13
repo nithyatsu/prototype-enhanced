@@ -91,6 +91,14 @@ jobs:
 
       - name: Install Radius with custom images
         run: |
+          # Watch pods in the background so we can see progress
+          (while true; do
+            echo "--- $(date +%H:%M:%S) radius-system pods ---"
+            kubectl get pods -n radius-system 2>/dev/null || echo "(namespace not yet created)"
+            sleep 10
+          done) &
+          WATCH_PID=$!
+
           rad install kubernetes \
             --set rp.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/applications-rp,rp.tag=${{ env.RADIUS_IMAGE_TAG }} \
             --set dynamicrp.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/dynamic-rp,dynamicrp.tag=${{ env.RADIUS_IMAGE_TAG }} \
@@ -98,6 +106,11 @@ jobs:
             --set ucp.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/ucpd,ucp.tag=${{ env.RADIUS_IMAGE_TAG }} \
             --set bicep.image=${{ env.RADIUS_CONTAINER_REGISTRY }}/bicep,bicep.tag=${{ env.RADIUS_IMAGE_TAG }} \
             --set global.imagePullPolicy=Never
+
+          # Stop the background watch
+          kill $WATCH_PID 2>/dev/null || true
+          echo "=== Final pod status ==="
+          kubectl get pods -n radius-system
 
 
       - name: Configure Radius workspace and environment
