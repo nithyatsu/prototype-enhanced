@@ -5,19 +5,9 @@
 
 ## Trigger
 
-The workflow should run every 2 hours. I should also be able to run it manually. 
-
-## Requirements
-
-# Workflow Specification
-
-> Fill in the sections below to describe what the CI/CD workflow should do.
-> Then ask Copilot: "Implement a GitHub Actions workflow based on workflow-spec.md"
-
-## Trigger
-
 - **Schedule:** Every 2 hours (`cron: '0 */2 * * *'`)
 - **Manual:** `workflow_dispatch`
+  - Input: `detailed` (boolean, default `false`) — when `true`, graph nodes display image:tag metadata (see Section 7)
 
 ## Requirements
 
@@ -93,7 +83,49 @@ Use a Mermaid `graph LR` with:
 
 Replace the Architecture section's Mermaid code block with the newly generated one. The diagram should be the only content between the `## Architecture` heading and the next `##` heading.
 
-### 7. Commit and push
+### 7. Detailed mode — Image dependency graph
+
+The workflow accepts a `detailed` input variable (boolean, default `false` for the main workflow).
+
+When `detailed` is `true`, graph nodes display **extended metadata** beyond the resource name:
+
+#### Node label format (detailed mode)
+
+Each container node renders as a multi-line label:
+
+```
+<resource-name>
+<image>:<tag>
+```
+
+For example:
+```
+frontend
+ghcr.io/image-registry/magpie:latest
+```
+
+#### Image and tag resolution
+
+| Priority | Source | Example |
+|----------|--------|---------|
+| 1 (highest) | Explicit `image` property in `app.bicep` (including via parameter default values) | `image: 'ghcr.io/image-registry/magpie:latest'` → image = `ghcr.io/image-registry/magpie`, tag = `latest` |
+| 2 (fallback) | Derive from resource name | resource named `frontend` → image = `frontend`, tag = `latest` |
+
+- If the `image` property contains a colon, split on the **last** colon to separate image and tag.
+- If the `image` property has no colon, the tag defaults to `latest`.
+- If no `image` property is found (e.g., non-container resources like datastores), show only the resource name (no image/tag line).
+
+#### Visual style (detailed mode)
+
+- Node labels use `<br/>` for line breaks in Mermaid.
+- The image:tag line is rendered in a smaller or secondary style (lighter color `#656d76`) to distinguish it from the resource name.
+- All other styling (borders, colors, edges) remains the same as the standard graph.
+
+#### Image dependency graph
+
+In detailed mode, the resulting diagram effectively becomes an **image dependency graph** — it shows which container images depend on (connect to) which other container images. This is useful for understanding the supply chain of container images in the application.
+
+### 8. Commit and push
 
 Auto-commit changes to `docs/` and `README.md` only if the graph has changed.
 
@@ -118,6 +150,32 @@ The GitHub Action reads committed `.radius/app-graph.json` files from git histor
 
 The comment is posted on **every push** to the PR, not just the first one. If no Bicep/graph changes exist, the comment says "No app graph changes detected."
 
+### Detailed mode in PRs
+
+The PR workflow runs in **detailed mode by default** (`detailed: true`). This means all graph nodes in the PR comment (side-by-side graphs and the consolidated diff graph) display the extended image:tag metadata described in Section 7 of the main workflow spec. This gives reviewers immediate visibility into which container images changed and how the image dependency chain is affected.
+
+### Clickable nodes in the consolidated diff graph
+
+In the PR comment's consolidated diff graph, **every node must be clickable**. Clicking a node opens the PR's **Files changed** view (`/files`) with the browser scrolled to the resource definition corresponding to that node.
+
+#### Link format
+
+```
+https://github.com/<owner>/<repo>/pull/<pr_number>/files#diff-<file_hash>R<line_number>
+```
+
+Where:
+- `<file_hash>` is the SHA-256 hash of the file path (e.g., `app.bicep`) — this matches GitHub's anchor format for PR diff files.
+- `R<line_number>` is the right-side line number in the diff corresponding to the resource definition's start line in the PR head.
+
+#### Mermaid `click` directive
+
+```mermaid
+click frontend href "https://github.com/<owner>/<repo>/pull/<pr>/files#diff-<hash>R<line>" "frontend — app.bicep line <N>" _blank
+```
+
+Each node in the diff graph (added, removed, modified, or unchanged) should have a `click` directive. For removed resources, link to the base side of the diff (`L<line>` instead of `R<line>`).
+
 ### Monorepo support
 
 Auto-detect all `**/.radius/app-graph.json` files. Each graph is diffed independently with separate comment sections per application.
@@ -126,13 +184,14 @@ Auto-detect all `**/.radius/app-graph.json` files. Each graph is diffed independ
 
 The comment includes:
 
-1. **Side-by-side Mermaid graphs** — `main` graph on the left, PR graph on the right, for visual comparison.
-2. **Diff graph** — a single Mermaid graph using color-coded nodes:
+1. **Side-by-side Mermaid graphs** — `main` graph on the left, PR graph on the right, for visual comparison. Both rendered in **detailed mode** (showing image:tag on each container node).
+2. **Diff graph** — a single consolidated Mermaid graph using color-coded nodes:
    - 🟢 Green border — added resources
    - 🟡 Amber border — modified resources
    - 🔴 Red border — removed resources
    - Gray border — unchanged resources
-3. **Clickable nodes** — clicking a node opens the PR's diff page (`/files`) with the resource's Bicep section in focus (anchored to the diff line).
+   - All container nodes display image:tag metadata (detailed mode).
+3. **Clickable nodes in diff graph** — every node in the consolidated diff graph is clickable. Clicking opens the PR's **Files changed** page (`/files`) scrolled to the resource definition. Added/modified/unchanged resources link to the right-side diff line (`R<line>`); removed resources link to the left-side diff line (`L<line>`).
 4. **Resources & connections table** — lists added/removed/modified resources and connections.
 5. **Footer** — "Powered by [Radius](https://radapp.io/)"
 
@@ -144,7 +203,10 @@ The comment includes:
 4. PR removes a resource → Diff graph shows the removed node in red (dashed border).
 5. PR modifies a resource → Diff graph shows the modified node in amber.
 6. PR comment already exists from a previous push → Existing comment is updated, not duplicated.
-7. Clicking a node in the diff graph opens the PR diff page with the resource's section in focus.
+7. Clicking any node in the consolidated diff graph opens the PR's Files changed page with the resource definition in focus (right-side line for added/modified/unchanged; left-side line for removed).
 8. Bicep files changed but `.radius/app-graph.json` was not updated → CI validation fails with instructions.
 9. Monorepo with multiple apps → Unified comment with separate sections per application.
 10. Comment footer says "Powered by [Radius](https://radapp.io/)".
+11. PR workflow runs in detailed mode by default — all container nodes in side-by-side and diff graphs show image:tag metadata.
+12. Main workflow with `detailed: true` input → README diagram shows image:tag on each container node.
+13. Main workflow with `detailed: false` (default) → README diagram shows only resource names (original behavior).
