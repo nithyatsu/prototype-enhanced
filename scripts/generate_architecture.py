@@ -20,6 +20,102 @@ import os
 import sys
 
 
+def is_detailed_mode() -> bool:
+    """Check if detailed mode is enabled via the DETAILED env var."""
+    return os.environ.get("DETAILED", "false").lower() in ("true", "1", "yes")
+
+
+def resolve_image_tag(resource: dict, bicep_path: str | None = None) -> tuple[str, str] | None:
+    """Resolve image and tag for a resource.
+
+    Returns (image, tag) or None if the resource isn't a container.
+
+    Priority:
+      1. Explicit 'image' property (from rad graph JSON or Bicep parse)
+      2. If image references a Bicep parameter, resolve the default value
+      3. Fallback: resource name as image, 'latest' as tag
+    """
+    if resource.get("category") not in ("container",):
+        return None
+
+    image_str = resource.get("image")
+
+    # If the image looks like an ARM parameter reference, try resolving from Bicep
+    if not image_str or (image_str and image_str.startswith("[")):
+        image_str = _resolve_param_image(resource, bicep_path)
+
+    if not image_str:
+        # Fallback: use resource name
+        name = resource.get("display_name") or resource.get("symbolic_name") or resource.get("name", "unknown")
+        return (name, "latest")
+
+    # Split on last colon to separate image from tag
+    if ":" in image_str:
+        idx = image_str.rfind(":")
+        return (image_str[:idx], image_str[idx + 1:])
+    else:
+        return (image_str, "latest")
+
+
+def _resolve_param_image(resource: dict, bicep_path: str | None) -> str | None:
+    """Try to resolve image from Bicep parameter defaults."""
+    if not bicep_path or not os.path.exists(bicep_path):
+        return None
+
+    try:
+        with open(bicep_path, "r") as f:
+            bicep_content = f.read()
+    except OSError:
+        return None
+
+    # Find all param declarations with string defaults that look like images
+    # e.g.: param magpieimage string = 'ghcr.io/image-registry/magpie:latest'
+    param_pattern = re.compile(
+        r"param\s+(\w+)\s+string\s*=\s*'([^']+)'", re.MULTILINE
+    )
+    param_defaults = {m.group(1): m.group(2) for m in param_pattern.finditer(bicep_content)}
+
+    # Now check if the resource's Bicep block references one of these params
+    res_name = resource.get("symbolic_name") or resource.get("name", "")
+    # Search for: resource <name> ... image: <paramName>
+    res_block_pattern = re.compile(
+        r"resource\s+" + re.escape(res_name) + r"\s+'[^']+'.+?image:\s*(\w+)",
+        re.DOTALL,
+    )
+    m = res_block_pattern.search(bicep_content)
+    if m:
+        param_name = m.group(1)
+        if param_name in param_defaults:
+            return param_defaults[param_name]
+
+    # Also try matching by display_name
+    display_name = resource.get("display_name", "")
+    if display_name and display_name != res_name:
+        res_block_pattern2 = re.compile(
+            r"name:\s*'" + re.escape(display_name) + r"'.+?image:\s*(\w+)",
+            re.DOTALL,
+        )
+        m2 = res_block_pattern2.search(bicep_content)
+        if m2:
+            param_name = m2.group(1)
+            if param_name in param_defaults:
+                return param_defaults[param_name]
+
+    return None
+
+
+def make_detailed_label(resource: dict, bicep_path: str | None = None) -> str:
+    """Build a detailed multi-line Mermaid label: name + image:tag."""
+    name = resource.get("display_name") or resource.get("symbolic_name") or resource.get("name", "unknown")
+    result = resolve_image_tag(resource, bicep_path)
+    if result:
+        image, tag = result
+        return '<b>{}</b><br/><span style="color:#656d76">{}</span>'.format(
+            name, f"{image}:{tag}"
+        )
+    return f"<b>{name}</b>"
+
+
 def parse_bicep(bicep_path):
     """Parse a Bicep file and extract resources, connections, and line numbers."""
     with open(bicep_path, "r") as f:
@@ -306,8 +402,12 @@ def get_github_file_url(repo_owner, repo_name, branch, file_path, line):
     return f"https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{file_path}#L{line}"
 
 
-def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bicep_file):
-    """Generate a Mermaid diagram string with clickable nodes and GitHub-like styling."""
+def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bicep_file,
+                     detailed=False, bicep_path=None):
+    """Generate a Mermaid diagram string with clickable nodes and GitHub-like styling.
+
+    When detailed=True, container nodes show image:tag metadata.
+    """
 
     lines = ["graph LR"]
 
@@ -346,14 +446,17 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
         if res["category"] == "application":
             continue
 
-        # Build label — clean, no line numbers (those go in tooltip only)
-        label_parts = ["<b>" + res["display_name"] + "</b>"]
-        if res["image"]:
-            label_parts.append(res["image"])
-        if res["port"]:
-            label_parts.append(":" + res["port"])
+        if detailed:
+            label = make_detailed_label(res, bicep_path)
+        else:
+            # Standard label — clean, no line numbers (those go in tooltip only)
+            label_parts = ["<b>" + res["display_name"] + "</b>"]
+            if res["image"]:
+                label_parts.append(res["image"])
+            if res["port"]:
+                label_parts.append(":" + res["port"])
+            label = "<br/>".join(label_parts)
 
-        label = "<br/>".join(label_parts)
         lines.append('    {}["{}"]:::{}'.format(res["symbolic_name"], label, res["category"]))
 
     # Add edges — clean arrow style
@@ -436,6 +539,10 @@ def main():
     repo_name = os.environ.get("REPO_NAME", "prototype")
     branch = os.environ.get("REPO_BRANCH", "main")
 
+    detailed = is_detailed_mode()
+    if detailed:
+        print("Detailed mode ENABLED — nodes will show image:tag metadata")
+
     # --- Try rad app graph output first (primary path in CI) ---
     rad_graph_output = os.environ.get("RAD_GRAPH_OUTPUT")
     resources = None
@@ -468,6 +575,8 @@ def main():
     mermaid_block = generate_mermaid(
         resources, connections,
         repo_owner, repo_name, branch, bicep_file,
+        detailed=detailed,
+        bicep_path=bicep_path,
     )
 
     print("\nMermaid output:")

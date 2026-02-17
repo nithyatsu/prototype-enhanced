@@ -145,6 +145,8 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
+          DETAILED: 'true'
+          BICEP_FILE: ${{ github.workspace }}/app.bicep
         run: |
           python scripts/graph_diff.py
           echo "--- Comment body ---"
