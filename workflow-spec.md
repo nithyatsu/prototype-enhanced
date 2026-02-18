@@ -125,6 +125,43 @@ ghcr.io/image-registry/magpie:latest
 
 In detailed mode, the resulting diagram effectively becomes an **image dependency graph** — it shows which container images depend on (connect to) which other container images. This is useful for understanding the supply chain of container images in the application.
 
+#### Stale image alert
+
+When the container resource specifies a **source repository URL** (or one can be inferred from the image name — e.g., `ghcr.io/image-registry/magpie` → `https://github.com/image-registry/magpie`), the workflow queries that repository's commit history to determine how many commits have landed **since the image's publish date** (i.e., the date the container image tag was last pushed).
+
+If commits exist after the image date, an **alert badge** is appended to the node label:
+
+```
+⚠️ N commits after <tag> tag
+```
+
+For example, a node in detailed mode would render as:
+
+```
+frontend
+ghcr.io/image-registry/magpie:latest
+⚠️ 12 commits after latest tag
+```
+
+##### Repository URL resolution
+
+| Priority | Source | Example |
+|----------|--------|---------|
+| 1 (highest) | Explicit `repoUrl` property on the container resource (future) | `repoUrl: 'https://github.com/org/repo'` |
+| 2 | Inferred from container image name | `ghcr.io/image-registry/magpie` → `https://github.com/image-registry/magpie` |
+
+##### Commit count resolution
+
+Use the GitHub API (`GET /repos/{owner}/{repo}/commits?since={image_date}`) to count commits since the image was published. The image publish date can be obtained from the container registry API (e.g., `ghcr.io` packages API).
+
+If the API is unavailable or the repo is private, skip the alert (no badge shown).
+
+##### Visual style
+
+- The alert line uses amber/warning color (`#d4a72c`) in the node label.
+- The `⚠️` emoji prefix draws attention to stale images.
+- If commit count is 0 (image is up to date), no alert is shown.
+
 ### 8. Commit and push
 
 Auto-commit changes to `docs/` and `README.md` only if the graph has changed.

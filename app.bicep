@@ -67,8 +67,7 @@ resource backend 'Applications.Core/containers@2023-10-01-preview' = {
       }}
       connections: {
       auth: {
-        source: 'http://auth:3000'
-      
+        source: 'http://auth:3000'    
       }
       database: {
         source: cache.id
