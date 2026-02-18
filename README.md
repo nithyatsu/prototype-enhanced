@@ -24,14 +24,25 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 %%{ init: { 'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#1f2328', 'primaryBorderColor': '#d1d9e0', 'lineColor': '#2da44e', 'secondaryColor': '#f6f8fa', 'tertiaryColor': '#ffffff', 'background': '#ffffff', 'mainBkg': '#ffffff', 'nodeBorder': '#d1d9e0', 'clusterBkg': '#f6f8fa', 'clusterBorder': '#d1d9e0', 'fontSize': '14px', 'fontFamily': '-apple-system, BlinkMacSystemFont, Segoe UI, Noto Sans, Helvetica, Arial, sans-serif' } } }%%
 graph LR
     classDef container fill:#ffffff,stroke:#2da44e,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
+    classDef stale fill:#fff8c5,stroke:#d4a72c,stroke-width:2px,color:#1f2328,rx:6,ry:6
     classDef datastore fill:#ffffff,stroke:#d4a72c,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
     classDef other fill:#ffffff,stroke:#d1d9e0,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
-    backend["<b>backend</b>"]:::container
-    frontend["<b>frontend</b>"]:::container
+    frontend["<b>frontend</b><br/><span style='color:#656d76'>ghcr.io/image-registry/magpie:latest</span><br/><span style='color:#d4a72c'>⚠️ 12 commits after latest tag</span>"]:::stale
+    backend["<b>backend</b><br/><span style='color:#656d76'>ghcr.io/image-registry/magpie:latest</span><br/><span style='color:#d4a72c'>⚠️ 12 commits after latest tag</span>"]:::stale
+    auth["<b>auth</b><br/><span style='color:#656d76'>ghcr.io/image-registry/magpie:latest</span><br/><span style='color:#d4a72c'>⚠️ 12 commits after latest tag</span>"]:::stale
+    cache["<b>cache</b>"]:::datastore
     frontend --> backend
+    backend --> auth
+    backend --> cache
+    click frontend href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L23" "frontend — app.bicep:23" _blank
+    click backend href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L50" "backend — app.bicep:50" _blank
+    click auth href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L82" "auth — app.bicep:82" _blank
+    click cache href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L100" "cache — app.bicep:100" _blank
     click backend href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L50" "app.bicep:50" _blank
     click frontend href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L23" "app.bicep:23" _blank
     linkStyle 0 stroke:#2da44e,stroke-width:1.5px
+    linkStyle 1 stroke:#2da44e,stroke-width:1.5px
+    linkStyle 2 stroke:#2da44e,stroke-width:1.5px
 ```
 
 
