@@ -24,6 +24,7 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 
 
 
+
 > *Auto-generated from `app.bicep` — click any node to jump to its definition in the source.*
 
 ```mermaid
@@ -32,8 +33,8 @@ graph LR
     classDef container fill:#ffffff,stroke:#2da44e,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
     classDef datastore fill:#ffffff,stroke:#d4a72c,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
     classDef other fill:#ffffff,stroke:#d1d9e0,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
-    backend["<b>backend</b>"]:::container
-    frontend["<b>frontend</b>"]:::container
+    backend["<b>backend</b><br/><span style="color:#656d76">ghcr.io/image-registry/magpie:latest</span>"]:::container
+    frontend["<b>frontend</b><br/><span style="color:#656d76">ghcr.io/image-registry/magpie:latest</span>"]:::container
     frontend --> backend
     click backend href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L50" "app.bicep:50" _blank
     click frontend href "https://github.com/nithyatsu/prototype-enhanced/blob/main/app.bicep#L23" "app.bicep:23" _blank
