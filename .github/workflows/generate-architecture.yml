@@ -25,6 +25,12 @@ on:
     # Every 2 hours
     - cron: "0 */2 * * *"
   workflow_dispatch:
+    inputs:
+      detailed:
+        description: 'Show image:tag metadata on graph nodes (detailed / image dependency mode)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -208,6 +214,8 @@ jobs:
           REPO_NAME: ${{ github.event.repository.name }}
           REPO_BRANCH: ${{ github.ref_name }}
           RAD_GRAPH_OUTPUT: ${{ github.workspace }}/.radius/app-graph.json
+          DETAILED: ${{ inputs.detailed || 'false' }}
+          BICEP_FILE: ${{ github.workspace }}/app.bicep
         run: python scripts/generate_architecture.py
 
       # -------------------------------------------------------

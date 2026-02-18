@@ -25,11 +25,21 @@ Environment variables:
     REPO_NAME    — repository name (e.g. "prototype").
 """
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+
+# Import detailed-mode helpers from our sibling module
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from generate_architecture import (
+    is_detailed_mode,
+    make_detailed_label,
+    resolve_image_tag,
+    _resolve_param_image,
+)
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -159,7 +169,16 @@ def diff_graphs(base: dict, head: dict) -> dict:
 
 # ── mermaid generation ───────────────────────────────────────────────
 
-def make_mermaid_graph(resources: dict, connections: list) -> str:
+def file_diff_anchor(file_path: str) -> str:
+    """Compute GitHub's PR diff anchor for a file path.
+
+    GitHub uses the SHA-256 hex digest of the file path.
+    """
+    return hashlib.sha256(file_path.encode()).hexdigest()
+
+
+def make_mermaid_graph(resources: dict, connections: list,
+                      detailed: bool = False, bicep_path: str | None = None) -> str:
     """Generate a simple Mermaid graph from resources and connections."""
     lines = []
     lines.append("%%{ init: { 'theme': 'base', 'themeVariables': { "
@@ -183,7 +202,21 @@ def make_mermaid_graph(resources: dict, connections: list) -> str:
         if cat == "application":
             continue
         nid = safe_node_id(name)
-        lines.append('    {}["{}"]:::{}'.format(nid, name, cat))
+
+        if detailed and cat == "container":
+            # Build detailed label with image:tag
+            detail_res = {
+                "display_name": name,
+                "symbolic_name": name,
+                "name": name,
+                "category": cat,
+                "image": res.get("properties", {}).get("container", {}).get("image"),
+            }
+            label = make_detailed_label(detail_res, bicep_path)
+        else:
+            label = name
+
+        lines.append('    {}["{}"]:::{}'.format(nid, label, cat))
 
     for src_id, tgt_id in connections:
         src = resolve_name(src_id, resources)
@@ -201,7 +234,8 @@ def make_mermaid_graph(resources: dict, connections: list) -> str:
 
 
 def make_diff_mermaid(base: dict, head: dict, diff: dict,
-                      repo_owner: str, repo_name: str, pr_number: str) -> str:
+                      repo_owner: str, repo_name: str, pr_number: str,
+                      detailed: bool = False, bicep_path: str | None = None) -> str:
     """Generate a color-coded diff Mermaid graph.
 
     Colors:
@@ -245,16 +279,33 @@ def make_diff_mermaid(base: dict, head: dict, diff: dict,
 
         if rid in diff["added"]:
             status = "added"
-            label = f"+ {name}"
+            prefix = "+ "
         elif rid in diff["removed"]:
             status = "removed"
-            label = f"- {name}"
+            prefix = "- "
         elif rid in diff["modified"]:
             status = "modified"
-            label = f"~ {name}"
+            prefix = "~ "
         else:
             status = "unchanged"
-            label = name
+            prefix = ""
+
+        cat = categorize(res_type)
+
+        if detailed and cat == "container":
+            # Build detailed label with image:tag
+            detail_res = {
+                "display_name": name,
+                "symbolic_name": name,
+                "name": name,
+                "category": cat,
+                "image": res.get("properties", {}).get("container", {}).get("image"),
+            }
+            base_label = make_detailed_label(detail_res, bicep_path)
+            # Prepend the status prefix to the bold name inside the label
+            label = base_label.replace(f"<b>{name}</b>", f"<b>{prefix}{name}</b>")
+        else:
+            label = f"{prefix}{name}"
 
         nid = safe_node_id(name)
         if nid not in nodes_added:
@@ -286,7 +337,7 @@ def make_diff_mermaid(base: dict, head: dict, diff: dict,
         else:
             lines.append("    {} --> {}".format(s, t))
 
-    # Click directives — link to PR diff page anchored to the source file
+    # Click directives — link to PR diff page anchored to the source file + line
     for rid in all_rids:
         res = all_resources.get(rid, {})
         name = res.get("name", "unknown")
@@ -294,10 +345,20 @@ def make_diff_mermaid(base: dict, head: dict, diff: dict,
             continue
 
         nid = safe_node_id(name)
-        source_file = res.get("sourceLocation", {}).get("file", "")
+        source_loc = res.get("sourceLocation", {})
+        source_file = source_loc.get("file", "")
+        line = source_loc.get("line", "")
+
         if source_file:
-            file_url = f"{diff_url}#diff-{source_file.replace('/', '-').replace('.', '-')}"
-            lines.append('    click {} href "{}" "View diff" _blank'.format(nid, file_url))
+            anchor = file_diff_anchor(source_file)
+            # For removed resources, link to the left (base) side of the diff
+            if rid in diff["removed"]:
+                line_anchor = f"L{line}" if line else ""
+            else:
+                line_anchor = f"R{line}" if line else ""
+            file_url = f"{diff_url}#diff-{anchor}{line_anchor}"
+            tooltip = f"{name} \u2014 {source_file} line {line}" if line else f"View diff for {name}"
+            lines.append('    click {} href "{}" "{}" _blank'.format(nid, file_url, tooltip))
 
     return "\n".join(lines)
 
@@ -305,7 +366,8 @@ def make_diff_mermaid(base: dict, head: dict, diff: dict,
 # ── markdown rendering ──────────────────────────────────────────────
 
 def render_diff_section(app_path: str, base_graph: dict, head_graph: dict, diff: dict,
-                        repo_owner: str, repo_name: str, pr_number: str) -> str:
+                        repo_owner: str, repo_name: str, pr_number: str,
+                        detailed: bool = False, bicep_path: str | None = None) -> str:
     """Render a full Markdown section for one application's diff."""
     lines = []
     app_label = app_path.replace("/.radius/app-graph.json", "").replace(".radius/app-graph.json", "") or "(root)"
@@ -319,8 +381,10 @@ def render_diff_section(app_path: str, base_graph: dict, head_graph: dict, diff:
         return "\n".join(lines)
 
     # ── Side-by-side graphs ──
-    base_mermaid = make_mermaid_graph(base_graph["resources"], base_graph["connections"])
-    head_mermaid = make_mermaid_graph(head_graph["resources"], head_graph["connections"])
+    base_mermaid = make_mermaid_graph(base_graph["resources"], base_graph["connections"],
+                                      detailed=detailed, bicep_path=bicep_path)
+    head_mermaid = make_mermaid_graph(head_graph["resources"], head_graph["connections"],
+                                      detailed=detailed, bicep_path=bicep_path)
 
     lines.append("<table>")
     lines.append("<tr><th>📌 main</th><th>🔀 This PR</th></tr>")
@@ -337,7 +401,8 @@ def render_diff_section(app_path: str, base_graph: dict, head_graph: dict, diff:
 
     # ── Diff graph ──
     diff_mermaid = make_diff_mermaid(base_graph, head_graph, diff,
-                                     repo_owner, repo_name, pr_number)
+                                     repo_owner, repo_name, pr_number,
+                                     detailed=detailed, bicep_path=bicep_path)
     lines.append("#### Diff\n")
     lines.append("🟢 Added  🟡 Modified  🔴 Removed\n")
     lines.append("```mermaid")
@@ -409,6 +474,11 @@ def main():
     repo_owner = os.environ.get("REPO_OWNER", "nithyatsu")
     repo_name = os.environ.get("REPO_NAME", "prototype")
 
+    detailed = is_detailed_mode()
+    bicep_path = os.environ.get("BICEP_FILE")
+    if detailed:
+        print("Detailed mode ENABLED — nodes will show image:tag metadata")
+
     if not base_sha:
         print("Error: BASE_SHA must be set.", file=sys.stderr)
         sys.exit(1)
@@ -437,6 +507,7 @@ def main():
         section = render_diff_section(
             base_graph_path, base_graph, head_graph, diff,
             repo_owner, repo_name, pr_number,
+            detailed=detailed, bicep_path=bicep_path,
         )
         result = render_full_comment([section])
 
