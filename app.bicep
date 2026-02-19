@@ -54,7 +54,6 @@ resource backend 'Applications.Core/containers@2023-10-01-preview' = {
     application: app.id
     container: {
       image: magpieimage
-     
       ports: {
         web: {
           containerPort: port
@@ -64,15 +63,15 @@ resource backend 'Applications.Core/containers@2023-10-01-preview' = {
         kind: 'httpGet'
         containerPort: port
         path: '/healthz'
-      }}
-      connections: {
-        database: {
-          source: database.id
-        
-        }
+      }
+    }
+    connections: {
+      database: {
+        source: database.id
       }
     }
   }
+}
 
 // Database - Redis used as a simple data store
 resource database 'Applications.Datastores/redisCaches@2023-10-01-preview' = {
@@ -81,7 +80,7 @@ resource database 'Applications.Datastores/redisCaches@2023-10-01-preview' = {
     application: app.id
     environment: environment
   }
-
+}
 
 
 // import radius as radius
