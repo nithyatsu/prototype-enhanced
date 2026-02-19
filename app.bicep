@@ -83,6 +83,7 @@ resource database 'Applications.Datastores/redisCaches@2023-10-01-preview' = {
   }
 }
 
+
 // import radius as radius
 
 // @description('The Radius environment ID')
